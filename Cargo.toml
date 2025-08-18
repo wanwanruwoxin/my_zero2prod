@@ -1,0 +1,6 @@
+[package]
+name = "my-zero2prod"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
