@@ -1,9 +1,8 @@
 use axum::{Router, http::StatusCode, routing::get};
+use tokio::net::TcpListener;
 
-pub async fn run() {
+pub async fn run(listener: TcpListener) {
     let app = Router::new().route("/health_check", get(health_check));
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
