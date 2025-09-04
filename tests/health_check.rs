@@ -1,5 +1,12 @@
-use my_zero2prod::{configuration::get_configuration, entities::subscriptions};
-use sea_orm::{Database, DatabaseConnection, EntityTrait};
+use migration::{Migrator, MigratorTrait};
+use my_zero2prod::{
+    configuration::{DatabaseSettings, get_configuration},
+    entities::subscriptions,
+};
+use sea_orm::{
+    Database, DatabaseConnection, EntityTrait,
+    sqlx::{Connection, Executor, PgConnection},
+};
 use tokio::net::TcpListener;
 
 #[tokio::test]
@@ -73,7 +80,7 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
 
 pub struct TestApp {
     pub address: String,
-    pub db: DatabaseConnection
+    pub db: DatabaseConnection,
 }
 
 async fn spawn_app() -> TestApp {
@@ -81,19 +88,34 @@ async fn spawn_app() -> TestApp {
         .await
         .expect("Failed to bind random port");
 
-    let configuration = get_configuration().expect("Failed to read configuration.");
-    let db: DatabaseConnection = Database::connect(&configuration.database.connection_string())
-        .await
-        .unwrap();
+    let mut configuration = get_configuration().expect("Failed to read configuration.");
+    configuration.database.database_name = uuid::Uuid::new_v4().to_string();
+
+    let db = configure_database(&configuration.database).await;
     let port = listener.local_addr().unwrap().port();
 
     let _ = tokio::spawn(my_zero2prod::startup::run(listener, db.clone()));
 
     let address = format!("http://127.0.0.1:{}", port);
-    
-    TestApp {
-        address,
-        db,
-    }
 
+    TestApp { address, db }
+}
+
+/// 为每次测试创建一个新的数据库，并返回该数据库的链接
+pub async fn configure_database(config: &DatabaseSettings) -> DatabaseConnection {
+    let mut connection = PgConnection::connect(&config.connection_string_without_db())
+        .await
+        .unwrap();
+    connection
+        .execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
+        .await
+        .unwrap();
+
+    // 执行 migration
+    let db: DatabaseConnection = Database::connect(&config.connection_string())
+        .await
+        .unwrap();
+    Migrator::up(&db, None).await.unwrap();
+
+    db
 }
