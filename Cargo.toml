@@ -23,3 +23,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
 uuid = { version = "1.18.1", features = ["v4"] }
 migration = { path = "migration" }
+tower = "0.5.2"
+tower-http = { version = "0.6.6", features = ["trace"] }
+env_logger = "0.11.8"
+log = "0.4.28"
