@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::{Form, extract::State, http::StatusCode};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection};
+use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::entities::subscriptions;
@@ -24,7 +25,6 @@ pub async fn subscribe(
         subscriber_name = %form.name,
     );
     let _request_span_guard = request_span.enter();
-    tracing::info!("request_id {} - 正在添加 '{}' '{}' 作为一个新的订阅者", request_id, form.email, form.name);
     tracing::info!("在数据库中保存一个新的订阅者");
     let subscriptions: subscriptions::ActiveModel = subscriptions::ActiveModel {
         id: Set(uuid::Uuid::new_v4()),
@@ -33,14 +33,19 @@ pub async fn subscribe(
         subscribed_at: Set(chrono::Utc::now()),
     };
 
-    match subscriptions.insert(state.as_ref()).await {
+    let query_span = tracing::info_span!("在数据库中保存订阅者详情");
+    match subscriptions
+        .insert(state.as_ref())
+        .instrument(query_span)
+        .await
+    {
         Ok(_) => {
             tracing::info!("request_id {} - 成功保存订阅者", request_id);
             StatusCode::OK
-        },
+        }
         Err(e) => {
             tracing::error!("request_id {} - 保存订阅者时发生错误: {:?}", request_id, e);
             StatusCode::INTERNAL_SERVER_ERROR
-        },
+        }
     }
 }
