@@ -27,3 +27,4 @@ tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["trace"] }
 env_logger = "0.11.8"
 log = "0.4.28"
+tracing = { version = "0.1.41", features = ["log"] }

@@ -17,8 +17,15 @@ pub async fn subscribe(
     form: Form<FormData>,
 ) -> StatusCode {
     let request_id = Uuid::new_v4();
-    log::info!("request_id {} - 正在添加 '{}' '{}' 作为一个新的订阅者", request_id, form.email, form.name);
-    log::info!("在数据库中保存一个新的订阅者");
+    let request_span = tracing::info_span!(
+        "添加一个新的订阅者",
+        %request_id,
+        subscriber_email = %form.email,
+        subscriber_name = %form.name,
+    );
+    let _request_span_guard = request_span.enter();
+    tracing::info!("request_id {} - 正在添加 '{}' '{}' 作为一个新的订阅者", request_id, form.email, form.name);
+    tracing::info!("在数据库中保存一个新的订阅者");
     let subscriptions: subscriptions::ActiveModel = subscriptions::ActiveModel {
         id: Set(uuid::Uuid::new_v4()),
         email: Set(form.email.clone()),
@@ -28,11 +35,11 @@ pub async fn subscribe(
 
     match subscriptions.insert(state.as_ref()).await {
         Ok(_) => {
-            log::info!("request_id {} - 成功保存订阅者", request_id);
+            tracing::info!("request_id {} - 成功保存订阅者", request_id);
             StatusCode::OK
         },
         Err(e) => {
-            log::error!("request_id {} - 保存订阅者时发生错误: {:?}", request_id, e);
+            tracing::error!("request_id {} - 保存订阅者时发生错误: {:?}", request_id, e);
             StatusCode::INTERNAL_SERVER_ERROR
         },
     }
