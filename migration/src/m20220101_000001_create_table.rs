@@ -16,14 +16,15 @@ impl MigrationTrait for Migration {
                     name TEXT NOT NULL,
                     subscribed_at timestamptz NOT NULL
                 )
-            "
+            ",
         )
         .await?;
         Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager.get_connection()
+        manager
+            .get_connection()
             .execute_unprepared("DROP TABLE subscriptions")
             .await?;
         Ok(())

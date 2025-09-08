@@ -1,7 +1,10 @@
-use my_zero2prod::{configuration::get_configuration, startup::run, telemetry::{get_subscriber, init_subscriber}};
+use my_zero2prod::{
+    configuration::get_configuration,
+    startup::run,
+    telemetry::{get_subscriber, init_subscriber},
+};
 use sea_orm::{Database, DatabaseConnection};
 use tokio::net::TcpListener;
-
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {

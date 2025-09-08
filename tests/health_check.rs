@@ -1,7 +1,8 @@
 use migration::{Migrator, MigratorTrait};
 use my_zero2prod::{
-    configuration::{get_configuration, DatabaseSettings},
-    entities::subscriptions, telemetry::{get_subscriber, init_subscriber},
+    configuration::{DatabaseSettings, get_configuration},
+    entities::subscriptions,
+    telemetry::{get_subscriber, init_subscriber},
 };
 use sea_orm::{
     Database, DatabaseConnection, EntityTrait,
