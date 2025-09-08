@@ -1,6 +1,8 @@
 use axum::http::StatusCode;
 
+#[tracing::instrument(name = "健康检查")]
 pub async fn health_check() -> StatusCode {
+    tracing::info!("健康检查请求");
     StatusCode::OK
 }
 

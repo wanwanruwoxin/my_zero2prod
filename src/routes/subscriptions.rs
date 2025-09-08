@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::{Form, extract::State, http::StatusCode};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
-use uuid::Uuid;
 
 use crate::entities::subscriptions;
 
@@ -16,7 +15,6 @@ pub struct FormData {
     name = "添加一个新的订阅者",
     skip(state, form),
     fields(
-        request_id = %Uuid::new_v4(),
         subscriber_email = %form.email,
         subscriber_name = %form.name
     )
