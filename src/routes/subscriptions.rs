@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use axum::{Form, extract::State, http::StatusCode};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection};
-use tracing::Instrument;
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
 use uuid::Uuid;
 
 use crate::entities::subscriptions;
@@ -13,19 +12,36 @@ pub struct FormData {
     name: String,
 }
 
+#[tracing::instrument(
+    name = "添加一个新的订阅者",
+    skip(state, form),
+    fields(
+        request_id = %Uuid::new_v4(),
+        subscriber_email = %form.email,
+        subscriber_name = %form.name
+    )
+)]
 pub async fn subscribe(
     State(state): State<Arc<DatabaseConnection>>,
     form: Form<FormData>,
 ) -> StatusCode {
-    let request_id = Uuid::new_v4();
-    let request_span = tracing::info_span!(
-        "添加一个新的订阅者",
-        %request_id,
-        subscriber_email = %form.email,
-        subscriber_name = %form.name,
-    );
-    let _request_span_guard = request_span.enter();
-    tracing::info!("在数据库中保存一个新的订阅者");
+    match insert_subscriber(&state, form.0).await {
+        Ok(_) => StatusCode::OK,
+        Err(e) => {
+            tracing::error!("保存订阅者时发生错误: {:?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+#[tracing::instrument(
+    name = "保存订阅者",
+    skip(db, form),
+)]
+pub async fn insert_subscriber(
+    db: &DatabaseConnection,
+    form: FormData,
+) -> Result<subscriptions::Model, DbErr> {
     let subscriptions: subscriptions::ActiveModel = subscriptions::ActiveModel {
         id: Set(uuid::Uuid::new_v4()),
         email: Set(form.email.clone()),
@@ -33,19 +49,8 @@ pub async fn subscribe(
         subscribed_at: Set(chrono::Utc::now()),
     };
 
-    let query_span = tracing::info_span!("在数据库中保存订阅者详情");
-    match subscriptions
-        .insert(state.as_ref())
-        .instrument(query_span)
-        .await
-    {
-        Ok(_) => {
-            tracing::info!("request_id {} - 成功保存订阅者", request_id);
-            StatusCode::OK
-        }
-        Err(e) => {
-            tracing::error!("request_id {} - 保存订阅者时发生错误: {:?}", request_id, e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        }
-    }
+    subscriptions.insert(db).await.map_err(|e| {
+        tracing::error!("执行插入语句失败: {:?}", e);
+        e
+    })
 }
