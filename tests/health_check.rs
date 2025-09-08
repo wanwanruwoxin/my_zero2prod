@@ -1,7 +1,7 @@
 use migration::{Migrator, MigratorTrait};
 use my_zero2prod::{
-    configuration::{DatabaseSettings, get_configuration},
-    entities::subscriptions,
+    configuration::{get_configuration, DatabaseSettings},
+    entities::subscriptions, telemetry::{get_subscriber, init_subscriber},
 };
 use sea_orm::{
     Database, DatabaseConnection, EntityTrait,
@@ -84,6 +84,9 @@ pub struct TestApp {
 }
 
 async fn spawn_app() -> TestApp {
+    let subscriber = get_subscriber("test".into(), "debug".into());
+    init_subscriber(subscriber);
+
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind random port");
