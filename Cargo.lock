@@ -1746,6 +1746,7 @@ dependencies = [
  "config",
  "log",
  "migration",
+ "once_cell",
  "reqwest",
  "sea-orm",
  "serde",

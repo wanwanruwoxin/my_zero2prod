@@ -4,6 +4,7 @@ use my_zero2prod::{
     entities::subscriptions,
     telemetry::{get_subscriber, init_subscriber},
 };
+use once_cell::sync::Lazy;
 use sea_orm::{
     Database, DatabaseConnection, EntityTrait,
     sqlx::{Connection, Executor, PgConnection},
@@ -13,7 +14,7 @@ use tokio::net::TcpListener;
 #[tokio::test]
 async fn health_check_works() {
     let test_app = spawn_app().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
 
     let response = client
         .get(&format!("{}/health_check", test_app.address))
@@ -28,7 +29,7 @@ async fn health_check_works() {
 #[tokio::test]
 async fn subscribe_returns_a_200_for_valid_form_data() {
     let test_app = spawn_app().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
 
     let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
     let response = client
@@ -54,7 +55,7 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
 #[tokio::test]
 async fn subscribe_returns_a_400_when_data_is_missing() {
     let test_app = spawn_app().await;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
     let test_cases = vec![
         ("name=le%20guin", "missing the email"),
         ("email=ursula_le_guin%40gmail.com", "missing the name"),
@@ -73,11 +74,16 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
         assert_eq!(
             422,
             response.status().as_u16(),
-            "The API did not fail with 400 Bad Request when the payload was {}.",
+            "The API did not fail with 422 Unprocessable Entity when the payload was {}.",
             error_message
         )
     }
 }
+
+static TRACING: Lazy<()> = Lazy::new(|| {
+    let subscriber = get_subscriber("test".into(), "debug".into());
+    init_subscriber(subscriber);
+});
 
 pub struct TestApp {
     pub address: String,
@@ -85,8 +91,8 @@ pub struct TestApp {
 }
 
 async fn spawn_app() -> TestApp {
-    let subscriber = get_subscriber("test".into(), "debug".into());
-    init_subscriber(subscriber);
+    // 第一次执行会初始化Tracing，之后都会跳过
+    Lazy::force(&TRACING);
 
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
