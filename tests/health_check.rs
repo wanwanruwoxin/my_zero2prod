@@ -9,6 +9,7 @@ use sea_orm::{
     Database, DatabaseConnection, EntityTrait,
     sqlx::{Connection, Executor, PgConnection},
 };
+use secrecy::ExposeSecret;
 use tokio::net::TcpListener;
 
 #[tokio::test]
@@ -123,7 +124,7 @@ async fn spawn_app() -> TestApp {
 
 /// 为每次测试创建一个新的数据库，并返回该数据库的链接
 pub async fn configure_database(config: &DatabaseSettings) -> DatabaseConnection {
-    let mut connection = PgConnection::connect(&config.connection_string_without_db())
+    let mut connection = PgConnection::connect(&config.connection_string_without_db().expose_secret())
         .await
         .unwrap();
     connection
@@ -132,7 +133,7 @@ pub async fn configure_database(config: &DatabaseSettings) -> DatabaseConnection
         .unwrap();
 
     // 执行 migration
-    let db: DatabaseConnection = Database::connect(&config.connection_string())
+    let db: DatabaseConnection = Database::connect(config.connection_string().expose_secret())
         .await
         .unwrap();
     Migrator::up(&db, None).await.unwrap();

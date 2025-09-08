@@ -4,6 +4,7 @@ use my_zero2prod::{
     telemetry::{get_subscriber, init_subscriber},
 };
 use sea_orm::{Database, DatabaseConnection};
+use secrecy::ExposeSecret;
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -12,7 +13,7 @@ async fn main() -> std::io::Result<()> {
     init_subscriber(subscriber);
 
     let configuration = get_configuration().expect("Failed to read configuration.");
-    let db: DatabaseConnection = Database::connect(&configuration.database.connection_string())
+    let db: DatabaseConnection = Database::connect(configuration.database.connection_string().expose_secret())
         .await
         .unwrap();
 
