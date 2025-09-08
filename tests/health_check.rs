@@ -81,8 +81,18 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
 }
 
 static TRACING: Lazy<()> = Lazy::new(|| {
-    let subscriber = get_subscriber("test".into(), "debug".into());
-    init_subscriber(subscriber);
+    let default_filter_level = "info".to_string();
+    let subscriber_name = "test".to_string();
+
+    if std::env::var("TEST_LOG").is_ok() {
+        // 设置 TEST_LOG=true 运行测试时，捕获 日志输出
+        let subscriber = get_subscriber(subscriber_name, default_filter_level, std::io::stdout);
+        init_subscriber(subscriber);
+    } else {
+        // 如果没有设置 TEST_LOG，则使用 sink, 不捕获日志
+        let subscriber = get_subscriber(subscriber_name, default_filter_level, std::io::sink);
+        init_subscriber(subscriber);
+    }
 });
 
 pub struct TestApp {
