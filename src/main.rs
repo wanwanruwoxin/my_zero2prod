@@ -18,7 +18,8 @@ async fn main() -> std::io::Result<()> {
         .await
         .unwrap();
 
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", configuration.application_port))
+    let address = format!("{}:{}", configuration.application.host, configuration.application.port);
+    let listener = TcpListener::bind(address)
         .await
         .unwrap();
     run(listener, db).await;
