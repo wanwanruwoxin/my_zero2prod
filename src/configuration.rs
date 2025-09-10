@@ -18,6 +18,7 @@ pub struct DatabaseSettings {
     pub port: u16,
     pub host: String,
     pub database_name: String,
+    pub require_ssl: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -103,31 +104,42 @@ impl DatabaseSettings {
             .idle_timeout(Duration::from_secs(8))
             .max_lifetime(Duration::from_secs(8))
             .sqlx_logging(true)
-            .sqlx_logging_level(log::LevelFilter::Info);
+            .sqlx_logging_level(log::LevelFilter::Trace);
     }
 
     fn connection_string(&self) -> SecretBox<String> {
         SecretBox::init_with(|| {
-            format!(
+            let str = format!(
                 "postgres://{}:{}@{}:{}/{}",
                 self.username,
                 self.password.expose_secret(),
                 self.host,
                 self.port,
                 self.database_name
-            )
+            );
+            self.set_ssl_mode(str)
         })
     }
 
     fn connection_string_without_db(&self) -> SecretBox<String> {
         SecretBox::init_with(|| {
-            format!(
+            let str = format!(
                 "postgres://{}:{}@{}:{}",
                 self.username,
                 self.password.expose_secret(),
                 self.host,
                 self.port
-            )
+            );
+            self.set_ssl_mode(str)
         })
+    }
+
+    fn set_ssl_mode(&self, str: String) -> String {
+        let ssl_mode = if self.require_ssl {
+            "require"
+        } else {
+            "disable"
+        };
+        format!("{}?sslmode={}", str, ssl_mode)
     }
 }
