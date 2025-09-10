@@ -10,8 +10,16 @@ COPY . .
 # 构建可执行文件
 RUN cargo build --release
 
-FROM rust:1.89.0 AS runtime
+FROM debian:bullseye-slim AS runtime
 WORKDIR /app
+
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    # Clean up
+    && apt-get autoremove -y \
+    && apt-get clean -y \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/target/release/zero2prod zero2prod
 # 在运行时我们需要配置文件
 COPY configuration configuration
