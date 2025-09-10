@@ -5,11 +5,7 @@ use my_zero2prod::{
     telemetry::{get_subscriber, init_subscriber},
 };
 use once_cell::sync::Lazy;
-use sea_orm::{
-    Database, DatabaseConnection, EntityTrait,
-    sqlx::{Connection, Executor, PgConnection},
-};
-use secrecy::ExposeSecret;
+use sea_orm::{ConnectionTrait, Database, DatabaseConnection, EntityTrait};
 use tokio::net::TcpListener;
 
 #[tokio::test]
@@ -124,18 +120,13 @@ async fn spawn_app() -> TestApp {
 
 /// 为每次测试创建一个新的数据库，并返回该数据库的链接
 pub async fn configure_database(config: &DatabaseSettings) -> DatabaseConnection {
-    let mut connection = PgConnection::connect(&config.connection_string_without_db().expose_secret())
-        .await
-        .unwrap();
-    connection
-        .execute(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
+    let db = Database::connect(config.without_db()).await.unwrap();
+    db.execute_unprepared(format!(r#"CREATE DATABASE "{}";"#, config.database_name).as_str())
         .await
         .unwrap();
 
     // 执行 migration
-    let db: DatabaseConnection = Database::connect(config.connection_string().expose_secret())
-        .await
-        .unwrap();
+    let db: DatabaseConnection = Database::connect(config.with_db()).await.unwrap();
     Migrator::up(&db, None).await.unwrap();
 
     db

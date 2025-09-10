@@ -1,12 +1,9 @@
-use std::time::Duration;
-
 use my_zero2prod::{
     configuration::get_configuration,
     startup::run,
     telemetry::{get_subscriber, init_subscriber},
 };
-use sea_orm::{ConnectOptions, Database};
-use secrecy::ExposeSecret;
+use sea_orm::Database;
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -16,16 +13,9 @@ async fn main() -> std::io::Result<()> {
     init_subscriber(subscriber);
 
     let configuration = get_configuration().expect("Failed to read configuration.");
-    let mut opt = ConnectOptions::new(configuration.database.connection_string().expose_secret());
-    opt.max_connections(100)
-        .min_connections(5)
-        .connect_timeout(Duration::from_secs(2))
-        .acquire_timeout(Duration::from_secs(8))
-        .idle_timeout(Duration::from_secs(8))
-        .max_lifetime(Duration::from_secs(8))
-        .sqlx_logging(true)
-        .sqlx_logging_level(log::LevelFilter::Info);
-    let db = Database::connect(opt).await.unwrap();
+    let db = Database::connect(configuration.database.with_db())
+        .await
+        .unwrap();
 
     let address = format!(
         "{}:{}",

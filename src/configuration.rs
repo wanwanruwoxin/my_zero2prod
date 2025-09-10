@@ -1,4 +1,8 @@
+use std::time::Duration;
+
+use sea_orm::ConnectOptions;
 use secrecy::{ExposeSecret, SecretBox};
+use serde_aux::field_attributes::deserialize_number_from_string;
 
 #[derive(serde::Deserialize)]
 pub struct Settings {
@@ -10,6 +14,7 @@ pub struct Settings {
 pub struct DatabaseSettings {
     pub username: String,
     pub password: SecretBox<String>,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
     pub database_name: String,
@@ -17,6 +22,7 @@ pub struct DatabaseSettings {
 
 #[derive(serde::Deserialize)]
 pub struct ApplicationSettings {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: String,
 }
@@ -37,6 +43,8 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
         .add_source(config::File::from(
             configuration_directory.join(environment.as_str()),
         ))
+        // 用环境变量的配置，来覆盖 configuration 的配置（环境变量的配置优先）
+        .add_source(config::Environment::with_prefix("app").separator("__"))
         .build()
         .unwrap();
 
@@ -74,7 +82,31 @@ impl TryFrom<String> for Environment {
 }
 
 impl DatabaseSettings {
-    pub fn connection_string(&self) -> SecretBox<String> {
+    pub fn without_db(&self) -> ConnectOptions {
+        let mut opt: ConnectOptions =
+            ConnectOptions::new(self.connection_string_without_db().expose_secret());
+        self.set_db_options(&mut opt);
+        opt
+    }
+
+    pub fn with_db(&self) -> ConnectOptions {
+        let mut opt: ConnectOptions = ConnectOptions::new(self.connection_string().expose_secret());
+        self.set_db_options(&mut opt);
+        opt
+    }
+
+    fn set_db_options(&self, opt: &mut ConnectOptions) {
+        opt.max_connections(100)
+            .min_connections(5)
+            .connect_timeout(Duration::from_secs(2))
+            .acquire_timeout(Duration::from_secs(8))
+            .idle_timeout(Duration::from_secs(8))
+            .max_lifetime(Duration::from_secs(8))
+            .sqlx_logging(true)
+            .sqlx_logging_level(log::LevelFilter::Info);
+    }
+
+    fn connection_string(&self) -> SecretBox<String> {
         SecretBox::init_with(|| {
             format!(
                 "postgres://{}:{}@{}:{}/{}",
@@ -87,7 +119,7 @@ impl DatabaseSettings {
         })
     }
 
-    pub fn connection_string_without_db(&self) -> SecretBox<String> {
+    fn connection_string_without_db(&self) -> SecretBox<String> {
         SecretBox::init_with(|| {
             format!(
                 "postgres://{}:{}@{}:{}",

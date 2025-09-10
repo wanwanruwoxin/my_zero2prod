@@ -32,10 +32,7 @@ pub async fn subscribe(
     }
 }
 
-#[tracing::instrument(
-    name = "保存订阅者",
-    skip(db, form),
-)]
+#[tracing::instrument(name = "保存订阅者", skip(db, form))]
 pub async fn insert_subscriber(
     db: &DatabaseConnection,
     form: FormData,
