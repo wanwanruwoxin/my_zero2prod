@@ -1,10 +1,15 @@
-FROM rust:1.89.0 AS builder
-
-# 切换工作目录，类似于 `cd app`
-# docker会帮我们创建 app 文件夹，防止它不存在
+FROM lukemathwalker/cargo-chef:latest-rust-1.89.0 AS chef
 WORKDIR /app
-# 下载必要的系统依赖，为了 linking configuration
 RUN apt update && apt install lld clang -y
+
+FROM chef AS planner
+COPY . .
+# 计算项目中的 lock-file
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 # 复制所有文件到 docker image 中
 COPY . .
 # 构建可执行文件
