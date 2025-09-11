@@ -106,6 +106,13 @@ async fn subscribe_returns_a_400_when_fields_are_present_but_empty() {
     }
 }
 
+#[test]
+fn dummy_fail() {
+    let result: Result<&str, &str> = Err("Crash");
+    // assert!(result.is_ok());
+    claim::assert_ok!(result);
+}
+
 static TRACING: Lazy<()> = Lazy::new(|| {
     let default_filter_level = "info".to_string();
     let subscriber_name = "test".to_string();

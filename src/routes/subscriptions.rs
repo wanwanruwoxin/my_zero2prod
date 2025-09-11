@@ -28,7 +28,7 @@ pub async fn subscribe(
 ) -> StatusCode {
     let new_subscriber = NewSubscriber {
         email: form.email.clone(),
-        name: SubscriberName::parse(form.name.clone()),
+        name: SubscriberName::parse(form.name.clone()).expect("无效的订阅者姓名"),
     };
 
     match insert_subscriber(&state, &new_subscriber).await {
