@@ -77,6 +77,35 @@ async fn subscribe_returns_a_400_when_data_is_missing() {
     }
 }
 
+#[tokio::test]
+async fn subscribe_returns_a_200_when_fields_are_present_but_empty() {
+    let test_app = spawn_app().await;
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+
+    let test_cases = vec![
+        ("name=&email=123%40gmail.com", "empty name"),
+        ("name=abc&email=", "empty email"),
+        ("name=abc&email=123", "invalid email"),
+    ];
+
+    for (body, desc) in test_cases {
+        let response = client
+            .post(&format!("{}/subscriptions", &test_app.address))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .expect("Failed to execute request.");
+
+        assert_eq!(
+            200,
+            response.status().as_u16(),
+            "当 payload 为 {} 时, API 没有返回 200",
+            desc
+        )
+    }
+}
+
 static TRACING: Lazy<()> = Lazy::new(|| {
     let default_filter_level = "info".to_string();
     let subscriber_name = "test".to_string();

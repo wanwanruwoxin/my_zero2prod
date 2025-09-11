@@ -2,8 +2,12 @@ use std::sync::Arc;
 
 use axum::{Form, extract::State, http::StatusCode};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
+use unicode_segmentation::UnicodeSegmentation;
 
-use crate::entities::subscriptions;
+use crate::{
+    domain::{NewSubscriber, SubscriberName},
+    entities::subscriptions,
+};
 
 #[derive(serde::Deserialize, Clone)]
 pub struct FormData {
@@ -23,7 +27,12 @@ pub async fn subscribe(
     State(state): State<Arc<DatabaseConnection>>,
     form: Form<FormData>,
 ) -> StatusCode {
-    match insert_subscriber(&state, form.0).await {
+    let new_subscriber = NewSubscriber {
+        email: form.email.clone(),
+        name: SubscriberName::parse(form.name.clone()),
+    };
+
+    match insert_subscriber(&state, &new_subscriber).await {
         Ok(_) => StatusCode::OK,
         Err(e) => {
             tracing::error!("保存订阅者时发生错误: {:?}", e);
@@ -32,15 +41,15 @@ pub async fn subscribe(
     }
 }
 
-#[tracing::instrument(name = "保存订阅者", skip(db, form))]
+#[tracing::instrument(name = "保存订阅者", skip(db, new_subscriber))]
 pub async fn insert_subscriber(
     db: &DatabaseConnection,
-    form: FormData,
+    new_subscriber: &NewSubscriber,
 ) -> Result<subscriptions::Model, DbErr> {
     let subscriptions: subscriptions::ActiveModel = subscriptions::ActiveModel {
         id: Set(uuid::Uuid::new_v4()),
-        email: Set(form.email.clone()),
-        name: Set(form.name.clone()),
+        email: Set(new_subscriber.email.clone()),
+        name: Set(new_subscriber.name.inner_ref().to_string()),
         subscribed_at: Set(chrono::Utc::now()),
     };
 
