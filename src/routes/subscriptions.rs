@@ -3,10 +3,7 @@ use std::sync::Arc;
 use axum::{Form, extract::State, http::StatusCode};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
 
-use crate::{
-    domain::{NewSubscriber, SubscriberName},
-    entities::subscriptions,
-};
+use crate::{domain::{NewSubscriber, SubscriberName}, entities::subscriptions};
 
 #[derive(serde::Deserialize, Clone)]
 pub struct FormData {
