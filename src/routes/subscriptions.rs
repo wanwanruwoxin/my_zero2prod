@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::{Form, extract::State, http::StatusCode};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
     domain::{NewSubscriber, SubscriberName},
@@ -49,7 +48,7 @@ pub async fn insert_subscriber(
     let subscriptions: subscriptions::ActiveModel = subscriptions::ActiveModel {
         id: Set(uuid::Uuid::new_v4()),
         email: Set(new_subscriber.email.clone()),
-        name: Set(new_subscriber.name.inner_ref().to_string()),
+        name: Set(new_subscriber.name.as_ref().to_string()),
         subscribed_at: Set(chrono::Utc::now()),
     };
 

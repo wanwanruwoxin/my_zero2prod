@@ -19,8 +19,10 @@ impl SubscriberName {
             Self(s)
         }
     }
+}
 
-    pub fn inner_ref(&self) -> &String {
+impl AsRef<str> for SubscriberName {
+    fn as_ref(&self) -> &str {
         &self.0
     }
 }
