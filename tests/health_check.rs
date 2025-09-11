@@ -100,7 +100,7 @@ async fn subscribe_returns_a_400_when_fields_are_present_but_empty() {
         assert_eq!(
             400,
             response.status().as_u16(),
-            "当 payload 为 {} 时, API 没有返回 200",
+            "当 payload 为 {} 时, API 没有返回 400",
             desc
         )
     }

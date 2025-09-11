@@ -26,9 +26,16 @@ pub async fn subscribe(
     State(state): State<Arc<DatabaseConnection>>,
     form: Form<FormData>,
 ) -> StatusCode {
+    let name = match SubscriberName::parse(form.name.clone()) {
+        Ok(name) => name,
+        Err(_) => {
+            return StatusCode::BAD_REQUEST;
+        }
+    };
+
     let new_subscriber = NewSubscriber {
         email: form.email.clone(),
-        name: SubscriberName::parse(form.name.clone()).expect("无效的订阅者姓名"),
+        name: name,
     };
 
     match insert_subscriber(&state, &new_subscriber).await {
