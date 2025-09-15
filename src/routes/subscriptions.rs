@@ -21,23 +21,11 @@ pub struct FormData {
 )]
 pub async fn subscribe(
     State(state): State<Arc<DatabaseConnection>>,
-    form: Form<FormData>,
+    Form(form): Form<FormData>,
 ) -> StatusCode {
-    let name = match SubscriberName::parse(form.name.clone()) {
-        Ok(name) => name,
-        Err(_) => {
-            return StatusCode::BAD_REQUEST;
-        }
-    };
-
-    let email = match SubscriberEmail::parse(form.email.clone()) {
-        Ok(email) => email,
-        Err(_) => return StatusCode::BAD_REQUEST
-    };
-
-    let new_subscriber = NewSubscriber {
-        email: email,
-        name: name,
+    let new_subscriber = match parse_subscriber(form) {
+        Ok(subscriber) => subscriber,
+        Err(_) => return StatusCode::BAD_REQUEST,
     };
 
     match insert_subscriber(&state, &new_subscriber).await {
@@ -47,6 +35,12 @@ pub async fn subscribe(
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
+}
+
+pub fn parse_subscriber(form: FormData) -> Result<NewSubscriber, String> {
+    let name = SubscriberName::parse(form.name)?;
+    let email = SubscriberEmail::parse(form.email)?;
+    Ok(NewSubscriber { email, name })
 }
 
 #[tracing::instrument(name = "保存订阅者", skip(db, new_subscriber))]
