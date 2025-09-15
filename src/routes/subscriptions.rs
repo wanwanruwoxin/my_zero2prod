@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{Form, extract::State, http::StatusCode};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
 
-use crate::{domain::{NewSubscriber, SubscriberName}, entities::subscriptions};
+use crate::{domain::{NewSubscriber, SubscriberEmail, SubscriberName}, entities::subscriptions};
 
 #[derive(serde::Deserialize, Clone)]
 pub struct FormData {
@@ -30,8 +30,13 @@ pub async fn subscribe(
         }
     };
 
+    let email = match SubscriberEmail::parse(form.email.clone()) {
+        Ok(email) => email,
+        Err(_) => return StatusCode::BAD_REQUEST
+    };
+
     let new_subscriber = NewSubscriber {
-        email: form.email.clone(),
+        email: email,
         name: name,
     };
 
@@ -51,7 +56,7 @@ pub async fn insert_subscriber(
 ) -> Result<subscriptions::Model, DbErr> {
     let subscriptions: subscriptions::ActiveModel = subscriptions::ActiveModel {
         id: Set(uuid::Uuid::new_v4()),
-        email: Set(new_subscriber.email.clone()),
+        email: Set(new_subscriber.email.as_ref().to_string()),
         name: Set(new_subscriber.name.as_ref().to_string()),
         subscribed_at: Set(chrono::Utc::now()),
     };
