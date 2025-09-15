@@ -3,7 +3,10 @@ use std::sync::Arc;
 use axum::{Form, extract::State, http::StatusCode};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
 
-use crate::{domain::{NewSubscriber, SubscriberEmail, SubscriberName}, entities::subscriptions};
+use crate::{
+    domain::{NewSubscriber, SubscriberEmail, SubscriberName},
+    entities::subscriptions,
+};
 
 #[derive(serde::Deserialize, Clone)]
 pub struct FormData {
@@ -23,7 +26,7 @@ pub async fn subscribe(
     State(state): State<Arc<DatabaseConnection>>,
     Form(form): Form<FormData>,
 ) -> StatusCode {
-    let new_subscriber = match parse_subscriber(form) {
+    let new_subscriber = match form.try_into() {
         Ok(subscriber) => subscriber,
         Err(_) => return StatusCode::BAD_REQUEST,
     };
@@ -37,10 +40,14 @@ pub async fn subscribe(
     }
 }
 
-pub fn parse_subscriber(form: FormData) -> Result<NewSubscriber, String> {
-    let name = SubscriberName::parse(form.name)?;
-    let email = SubscriberEmail::parse(form.email)?;
-    Ok(NewSubscriber { email, name })
+impl TryFrom<FormData> for NewSubscriber {
+    type Error = String;
+
+    fn try_from(form: FormData) -> Result<Self, Self::Error> {
+        let name = SubscriberName::parse(form.name)?;
+        let email = SubscriberEmail::parse(form.email)?;
+        Ok(Self { email, name })
+    }
 }
 
 #[tracing::instrument(name = "保存订阅者", skip(db, new_subscriber))]
