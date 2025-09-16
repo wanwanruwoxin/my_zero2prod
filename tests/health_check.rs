@@ -1,8 +1,6 @@
 use migration::{Migrator, MigratorTrait};
 use my_zero2prod::{
-    configuration::{DatabaseSettings, get_configuration},
-    entities::subscriptions,
-    telemetry::{get_subscriber, init_subscriber},
+    configuration::{get_configuration, DatabaseSettings}, email_client::EmailClient, entities::subscriptions, telemetry::{get_subscriber, init_subscriber}
 };
 use once_cell::sync::Lazy;
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, EntityTrait};
@@ -140,7 +138,13 @@ async fn spawn_app() -> TestApp {
     let db = configure_database(&configuration.database).await;
     let port = listener.local_addr().unwrap().port();
 
-    let _ = tokio::spawn(my_zero2prod::startup::run(listener, db.clone()));
+    let email_client = EmailClient::new(
+        configuration.email_client.smtp_username,
+        configuration.email_client.smtp_password,
+        &configuration.email_client.base_url,
+    );
+
+    let _ = tokio::spawn(my_zero2prod::startup::run(listener, db.clone(), email_client));
 
     let address = format!("http://127.0.0.1:{}", port);
 

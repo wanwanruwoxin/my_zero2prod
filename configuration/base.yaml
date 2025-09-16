@@ -6,3 +6,7 @@ database:
   port: 5432
   host: 127.0.0.1
   database_name: newsletter
+email_client:
+  base_url: localhost
+  smtp_username: test@gmail.com
+  smtp_password: 123456

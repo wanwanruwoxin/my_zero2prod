@@ -1,5 +1,6 @@
 use my_zero2prod::{
     configuration::get_configuration,
+    email_client::EmailClient,
     startup::run,
     telemetry::{get_subscriber, init_subscriber},
 };
@@ -22,6 +23,12 @@ async fn main() -> std::io::Result<()> {
         configuration.application.host, configuration.application.port
     );
     let listener = TcpListener::bind(address).await.unwrap();
-    run(listener, db).await;
+
+    let email_client = EmailClient::new(
+        configuration.email_client.smtp_username,
+        configuration.email_client.smtp_password,
+        &configuration.email_client.base_url,
+    );
+    run(listener, db, email_client).await;
     Ok(())
 }
