@@ -5,6 +5,7 @@ use my_zero2prod::{
     telemetry::{get_subscriber, init_subscriber},
 };
 use sea_orm::Database;
+use secrecy::{SecretString};
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -26,7 +27,7 @@ async fn main() -> std::io::Result<()> {
 
     let email_client = EmailClient::new(
         configuration.email_client.smtp_username,
-        configuration.email_client.smtp_password,
+        SecretString::new(configuration.email_client.smtp_password.into_boxed_str()),
         &configuration.email_client.base_url,
     );
     run(listener, db, email_client).await;
