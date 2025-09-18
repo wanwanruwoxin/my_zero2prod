@@ -27,7 +27,7 @@ async fn main() -> std::io::Result<()> {
 
     let email_client = EmailClient::new(
         configuration.email_client.smtp_username,
-        SecretString::new(configuration.email_client.smtp_password.into_boxed_str()),
+        SecretString::from(configuration.email_client.smtp_password),
         &configuration.email_client.base_url,
     );
     run(listener, db, email_client).await;
