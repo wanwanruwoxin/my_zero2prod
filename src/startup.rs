@@ -6,7 +6,8 @@ use axum::{
     http::HeaderName,
     routing::{get, post},
 };
-use sea_orm::DatabaseConnection;
+use sea_orm::{Database, DatabaseConnection};
+use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{
@@ -15,7 +16,58 @@ use tower_http::{
 };
 use uuid::Uuid;
 
-use crate::{email_client::EmailClient, routes::{health_check::health_check, subscriptions::subscribe}};
+use crate::{
+    configuration::Settings,
+    email_client::EmailClient,
+    routes::{health_check::health_check, subscriptions::subscribe},
+};
+
+pub struct Application {
+    port: u16,
+    db: DatabaseConnection,
+    listener: TcpListener,
+    email_client: EmailClient,
+}
+
+impl Application {
+    pub async fn build(configuration: Settings) -> Result<Application, std::io::Error> {
+        let db = Database::connect(configuration.database.with_db())
+            .await
+            .unwrap();
+
+        let address = format!(
+            "{}:{}",
+            configuration.application.host, configuration.application.port
+        );
+        let listener = TcpListener::bind(address).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let email_client = EmailClient::new(
+            configuration.email_client.smtp_username,
+            SecretString::from(configuration.email_client.smtp_password),
+            &configuration.email_client.base_url,
+        );
+
+        Ok(Self {
+            port,
+            db,
+            listener,
+            email_client,
+        })
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn db(&self) -> DatabaseConnection {
+        self.db.clone()
+    }
+
+    pub async fn run_until_stopped(self) {
+        run(self.listener, self.db, self.email_client).await;
+    }
+}
 
 pub async fn run(listener: TcpListener, db: DatabaseConnection, email_client: EmailClient) {
     let x_request_id = HeaderName::from_static("x-request-id");

@@ -1,9 +1,11 @@
 use migration::{Migrator, MigratorTrait};
-use my_zero2prod::{configuration::{get_configuration, DatabaseSettings}, email_client::EmailClient, telemetry::{get_subscriber, init_subscriber}};
+use my_zero2prod::{
+    configuration::{DatabaseSettings, get_configuration},
+    startup::Application,
+    telemetry::{get_subscriber, init_subscriber},
+};
 use once_cell::sync::Lazy;
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection};
-use secrecy::SecretString;
-use tokio::net::TcpListener;
 
 static TRACING: Lazy<()> = Lazy::new(|| {
     let default_filter_level = "info".to_string();
@@ -29,27 +31,28 @@ pub async fn spawn_app() -> TestApp {
     // 第一次执行会初始化Tracing，之后都会跳过
     Lazy::force(&TRACING);
 
-    let listener = TcpListener::bind("127.0.0.1:0")
+    let configuration = {
+        let mut c = get_configuration().expect("Failed to read configuration");
+        c.database.database_name = uuid::Uuid::new_v4().to_string();
+        c.application.port = 0;
+        c
+    };
+
+    configure_database(&configuration.database).await;
+
+    let application = Application::build(configuration)
         .await
-        .expect("Failed to bind random port");
+        .expect("Failed to build application");
 
-    let mut configuration = get_configuration().expect("Failed to read configuration.");
-    configuration.database.database_name = uuid::Uuid::new_v4().to_string();
+    let address = format!("http://127.0.0.1:{}", &application.port());
 
-    let db = configure_database(&configuration.database).await;
-    let port = listener.local_addr().unwrap().port();
+    let db = application.db();
+    let _ = tokio::spawn(application.run_until_stopped());
 
-    let email_client = EmailClient::new(
-        configuration.email_client.smtp_username,
-        SecretString::from(configuration.email_client.smtp_password),
-        &configuration.email_client.base_url,
-    );
-
-    let _ = tokio::spawn(my_zero2prod::startup::run(listener, db.clone(), email_client));
-
-    let address = format!("http://127.0.0.1:{}", port);
-
-    TestApp { address, db }
+    TestApp {
+        address,
+        db,
+    }
 }
 
 /// 为每次测试创建一个新的数据库，并返回该数据库的链接
