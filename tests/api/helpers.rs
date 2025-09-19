@@ -27,6 +27,21 @@ pub struct TestApp {
     pub db: DatabaseConnection,
 }
 
+impl TestApp {
+    pub async fn post_subscriptions(&self, body: String) -> reqwest::Response {
+        reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .post(&format!("{}/subscriptions", &self.address))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+}
+
 pub async fn spawn_app() -> TestApp {
     // 第一次执行会初始化Tracing，之后都会跳过
     Lazy::force(&TRACING);
@@ -49,10 +64,7 @@ pub async fn spawn_app() -> TestApp {
     let db = application.db();
     let _ = tokio::spawn(application.run_until_stopped());
 
-    TestApp {
-        address,
-        db,
-    }
+    TestApp { address, db }
 }
 
 /// 为每次测试创建一个新的数据库，并返回该数据库的链接
