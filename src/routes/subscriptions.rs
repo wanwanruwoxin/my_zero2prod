@@ -5,7 +5,7 @@ use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
 
 use crate::{
     domain::{NewSubscriber, SubscriberEmail, SubscriberName},
-    email_client,
+    email_client::{self, EmailClient},
     entities::subscriptions,
 };
 
@@ -13,6 +13,16 @@ use crate::{
 pub struct FormData {
     email: String,
     name: String,
+}
+
+impl TryFrom<FormData> for NewSubscriber {
+    type Error = String;
+
+    fn try_from(form: FormData) -> Result<Self, Self::Error> {
+        let name = SubscriberName::parse(form.name)?;
+        let email = SubscriberEmail::parse(form.email)?;
+        Ok(Self { email, name })
+    }
 }
 
 #[tracing::instrument(
@@ -38,23 +48,29 @@ pub async fn subscribe(
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
 
-    if email_client.send_email(new_subscriber.email, "Welcome!", "Welcome to our newsletter!", "Welcome to our newsletter!").await.is_err() {
-        tracing::error!("发送欢迎邮件时发生错误");
+    if send_confirmation_email(email_client.as_ref(), new_subscriber).await.is_err() {
+        tracing::error!("发送确认邮件时发生错误");
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
 
     StatusCode::OK
 }
 
-impl TryFrom<FormData> for NewSubscriber {
-    type Error = String;
+pub async fn send_confirmation_email(email_client: &EmailClient, new_subscriber: NewSubscriber) -> Result<(), lettre::error::Error> {
+    let confirmation_link = format!(
+        "http://localhost:8000/subscriptions/confirm?subscription_token={}",
+        uuid::Uuid::new_v4()
+    );
 
-    fn try_from(form: FormData) -> Result<Self, Self::Error> {
-        let name = SubscriberName::parse(form.name)?;
-        let email = SubscriberEmail::parse(form.email)?;
-        Ok(Self { email, name })
-    }
+    email_client.send_email(
+        new_subscriber.email, 
+        "Welcome!",
+        &format!(r#"<h1>欢迎订阅我们的新闻邮件</h1><p>请点击以下链接确认您的订阅：</p><a href="{}">确认订阅</a>"#, confirmation_link),
+        &format!("欢迎订阅我们的新闻邮件, {}", confirmation_link)
+    ).await
 }
+
+
 
 #[tracing::instrument(name = "保存订阅者", skip(db, new_subscriber))]
 pub async fn insert_subscriber(
@@ -66,7 +82,7 @@ pub async fn insert_subscriber(
         email: Set(new_subscriber.email.as_ref().to_string()),
         name: Set(new_subscriber.name.as_ref().to_string()),
         subscribed_at: Set(chrono::Utc::now()),
-        status: Set("confirmed".into()),
+        status: Set("pending_confirmation".into()),
     };
 
     subscriptions.insert(db).await.map_err(|e| {
