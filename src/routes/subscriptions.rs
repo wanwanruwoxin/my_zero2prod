@@ -5,6 +5,7 @@ use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
 
 use crate::{
     domain::{NewSubscriber, SubscriberEmail, SubscriberName},
+    email_client,
     entities::subscriptions,
 };
 
@@ -24,6 +25,7 @@ pub struct FormData {
 )]
 pub async fn subscribe(
     State(state): State<Arc<DatabaseConnection>>,
+    State(email_client): State<Arc<email_client::EmailClient>>,
     Form(form): Form<FormData>,
 ) -> StatusCode {
     let new_subscriber = match form.try_into() {
@@ -31,13 +33,17 @@ pub async fn subscribe(
         Err(_) => return StatusCode::BAD_REQUEST,
     };
 
-    match insert_subscriber(&state, &new_subscriber).await {
-        Ok(_) => StatusCode::OK,
-        Err(e) => {
-            tracing::error!("保存订阅者时发生错误: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        }
+    if insert_subscriber(&state, &new_subscriber).await.is_err() {
+        tracing::error!("保存订阅者时发生错误");
+        return StatusCode::INTERNAL_SERVER_ERROR;
     }
+
+    if email_client.send_email(new_subscriber.email, "Welcome!", "Welcome to our newsletter!", "Welcome to our newsletter!").await.is_err() {
+        tracing::error!("发送欢迎邮件时发生错误");
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+
+    StatusCode::OK
 }
 
 impl TryFrom<FormData> for NewSubscriber {

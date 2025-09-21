@@ -7,6 +7,7 @@ use secrecy::{ExposeSecret, SecretString};
 
 use crate::domain::SubscriberEmail;
 
+#[derive(Debug)]
 pub struct EmailClient {
     username: String,
     smtp_transport: SmtpTransport,
