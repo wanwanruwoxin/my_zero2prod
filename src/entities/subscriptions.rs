@@ -8,6 +8,7 @@ pub struct Model {
     pub email: String,
     pub name: String,
     pub subscribed_at: DateTimeUtc,
+    pub status: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

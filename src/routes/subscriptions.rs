@@ -60,6 +60,7 @@ pub async fn insert_subscriber(
         email: Set(new_subscriber.email.as_ref().to_string()),
         name: Set(new_subscriber.name.as_ref().to_string()),
         subscribed_at: Set(chrono::Utc::now()),
+        status: Set("confirmed".into()),
     };
 
     subscriptions.insert(db).await.map_err(|e| {
