@@ -69,13 +69,22 @@ impl Application {
     }
 }
 
+pub struct AppState {
+    pub db: Arc<DatabaseConnection>,
+    pub email_client: Arc<EmailClient>,
+}
+
 pub async fn run(listener: TcpListener, db: DatabaseConnection, email_client: EmailClient) {
     let x_request_id = HeaderName::from_static("x-request-id");
+    let app_state = AppState {
+        db: Arc::new(db),
+        email_client: Arc::new(email_client),
+    };
+
     let app = Router::new()
         .route("/health_check", get(health_check))
         .route("/subscriptions", post(subscribe))
-        .with_state(Arc::new(db))
-        .with_state(Arc::new(email_client))
+        .with_state(Arc::new(app_state))
         .layer(
             ServiceBuilder::new().layer(TraceLayer::new_for_http().make_span_with(
                 |request: &Request| {
