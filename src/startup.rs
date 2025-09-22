@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::{
     configuration::Settings,
     email_client::EmailClient,
-    routes::{health_check::health_check, subscriptions::subscribe},
+    routes::{health_check::health_check, subscription_confirm::confirm, subscriptions::subscribe},
 };
 
 pub struct Application {
@@ -27,6 +27,7 @@ pub struct Application {
     db: DatabaseConnection,
     listener: TcpListener,
     email_client: EmailClient,
+    base_url: ApplicationBaseUrl,
 }
 
 impl Application {
@@ -53,6 +54,7 @@ impl Application {
             db,
             listener,
             email_client,
+            base_url: ApplicationBaseUrl(configuration.application.base_url),
         })
     }
 
@@ -65,25 +67,30 @@ impl Application {
     }
 
     pub async fn run_until_stopped(self) {
-        run(self.listener, self.db, self.email_client).await;
+        run(self.listener, self.db, self.email_client, self.base_url).await;
     }
 }
+
+pub struct ApplicationBaseUrl(pub String);
 
 pub struct AppState {
     pub db: Arc<DatabaseConnection>,
     pub email_client: Arc<EmailClient>,
+    pub base_url: Arc<ApplicationBaseUrl>,
 }
 
-pub async fn run(listener: TcpListener, db: DatabaseConnection, email_client: EmailClient) {
+pub async fn run(listener: TcpListener, db: DatabaseConnection, email_client: EmailClient, base_url: ApplicationBaseUrl) {
     let x_request_id = HeaderName::from_static("x-request-id");
     let app_state = AppState {
         db: Arc::new(db),
         email_client: Arc::new(email_client),
+        base_url: Arc::new(base_url),
     };
 
     let app = Router::new()
         .route("/health_check", get(health_check))
         .route("/subscriptions", post(subscribe))
+        .route("/subscriptions/confirm", get(confirm))
         .with_state(Arc::new(app_state))
         .layer(
             ServiceBuilder::new().layer(TraceLayer::new_for_http().make_span_with(

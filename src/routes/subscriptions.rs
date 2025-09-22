@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use axum::{Form, extract::State, http::StatusCode};
+use rand::{distr::Alphanumeric, Rng};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
 
 use crate::{
     domain::{NewSubscriber, SubscriberEmail, SubscriberName},
     email_client::EmailClient,
-    entities::subscriptions, startup::AppState,
+    entities::{subscription_tokens, subscriptions}, startup::{AppState, ApplicationBaseUrl},
 };
 
 #[derive(serde::Deserialize, Clone)]
@@ -42,12 +43,20 @@ pub async fn subscribe(
         Err(_) => return StatusCode::BAD_REQUEST,
     };
 
-    if insert_subscriber(&state.db, &new_subscriber).await.is_err() {
-        tracing::error!("保存订阅者时发生错误");
+
+
+
+    let subscription_id = match insert_subscriber(&state.db, &new_subscriber).await {
+        Ok(subscriber) => subscriber.id,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR,
+    };
+
+    let subscription_token = generate_subscription_token();
+    if store_token(&state.db, subscription_id, &subscription_token).await.is_err() {
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
 
-    if send_confirmation_email(state.email_client.as_ref(), new_subscriber).await.is_err() {
+    if send_confirmation_email(state.email_client.as_ref(), new_subscriber, state.base_url.as_ref(), &subscription_token).await.is_err() {
         tracing::error!("发送确认邮件时发生错误");
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
@@ -55,10 +64,24 @@ pub async fn subscribe(
     StatusCode::OK
 }
 
-pub async fn send_confirmation_email(email_client: &EmailClient, new_subscriber: NewSubscriber) -> Result<(), lettre::error::Error> {
+#[tracing::instrument(name = "存储订阅令牌", skip(token, db))]
+pub async fn store_token(db: &DatabaseConnection, subscription_id: uuid::Uuid, token: &str) -> Result<(), DbErr> {
+    let new_token = subscription_tokens::ActiveModel {
+        subscription_token: Set(token.into()),
+        subscriber_id: Set(subscription_id),
+    };
+
+    new_token.insert(db).await.map(|_| ()).map_err(|e| {
+        tracing::error!("执行插入语句失败: {:?}", e);
+        e
+    })
+}
+
+pub async fn send_confirmation_email(email_client: &EmailClient, new_subscriber: NewSubscriber, base_url: &ApplicationBaseUrl, token: &str) -> Result<(), lettre::error::Error> {
     let confirmation_link = format!(
-        "http://localhost:8000/subscriptions/confirm?subscription_token={}",
-        uuid::Uuid::new_v4()
+        "{}/subscriptions/confirm?subscription_token={}",
+        base_url.0,
+        token
     );
 
     email_client.send_email(
@@ -67,6 +90,14 @@ pub async fn send_confirmation_email(email_client: &EmailClient, new_subscriber:
         &format!(r#"<h1>欢迎订阅我们的新闻邮件</h1><p>请点击以下链接确认您的订阅：</p><a href="{}">确认订阅</a>"#, confirmation_link),
         &format!("欢迎订阅我们的新闻邮件, {}", confirmation_link)
     ).await
+}
+
+fn generate_subscription_token() -> String {
+    let mut rng = rand::rng();
+    std::iter::repeat_with(|| rng.sample(Alphanumeric))
+        .map(char::from)
+        .take(25)
+        .collect()
 }
 
 

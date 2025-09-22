@@ -23,6 +23,7 @@ static TRACING: Lazy<()> = Lazy::new(|| {
 });
 
 pub struct TestApp {
+    pub port: u16,
     pub address: String,
     pub db: DatabaseConnection,
 }
@@ -59,12 +60,16 @@ pub async fn spawn_app() -> TestApp {
         .await
         .expect("Failed to build application");
 
-    let address = format!("http://127.0.0.1:{}", &application.port());
+    let port = application.port();
 
     let db = application.db();
     let _ = tokio::spawn(application.run_until_stopped());
 
-    TestApp { address, db }
+    TestApp {
+        port,
+        address: format!("http://127.0.0.1:{}", port),
+        db,
+    }
 }
 
 /// 为每次测试创建一个新的数据库，并返回该数据库的链接
