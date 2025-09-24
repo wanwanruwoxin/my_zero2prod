@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use axum::{Form, extract::State, http::StatusCode};
 use rand::{distr::Alphanumeric, Rng};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseTransaction, DbErr, TransactionTrait};
 
 use crate::{
     domain::{NewSubscriber, SubscriberEmail, SubscriberName},
@@ -43,16 +43,23 @@ pub async fn subscribe(
         Err(_) => return StatusCode::BAD_REQUEST,
     };
 
+    let txn = match state.db.begin().await {
+        Ok(tx) => tx,
+        Err(_) => return StatusCode::BAD_REQUEST,
+    };
 
-
-
-    let subscription_id = match insert_subscriber(&state.db, &new_subscriber).await {
+    let subscription_id = match insert_subscriber(&txn, &new_subscriber).await {
         Ok(subscriber) => subscriber.id,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR,
     };
 
     let subscription_token = generate_subscription_token();
-    if store_token(&state.db, subscription_id, &subscription_token).await.is_err() {
+    if store_token(&txn, subscription_id, &subscription_token).await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }
+
+    if txn.commit().await.is_err() {
+        tracing::error!("提交事务时发生错误");
         return StatusCode::INTERNAL_SERVER_ERROR;
     }
 
@@ -65,7 +72,7 @@ pub async fn subscribe(
 }
 
 #[tracing::instrument(name = "存储订阅令牌", skip(token, db))]
-pub async fn store_token(db: &DatabaseConnection, subscription_id: uuid::Uuid, token: &str) -> Result<(), DbErr> {
+pub async fn store_token(db: &DatabaseTransaction, subscription_id: uuid::Uuid, token: &str) -> Result<(), DbErr> {
     let new_token = subscription_tokens::ActiveModel {
         subscription_token: Set(token.into()),
         subscriber_id: Set(subscription_id),
@@ -104,7 +111,7 @@ fn generate_subscription_token() -> String {
 
 #[tracing::instrument(name = "保存订阅者", skip(db, new_subscriber))]
 pub async fn insert_subscriber(
-    db: &DatabaseConnection,
+    db: &DatabaseTransaction,
     new_subscriber: &NewSubscriber,
 ) -> Result<subscriptions::Model, DbErr> {
     let subscriptions: subscriptions::ActiveModel = subscriptions::ActiveModel {
