@@ -1,6 +1,8 @@
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 use axum::{Form, extract::State, http::StatusCode};
+use axum::response::{IntoResponse, Response};
 use rand::{distr::Alphanumeric, Rng};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseTransaction, DbErr, TransactionTrait};
 
@@ -37,50 +39,44 @@ impl TryFrom<FormData> for NewSubscriber {
 pub async fn subscribe(
     State(state): State<Arc<AppState>>,
     Form(form): Form<FormData>,
-) -> StatusCode {
+) -> Result<(), StoreTokenError> {
     let new_subscriber = match form.try_into() {
         Ok(subscriber) => subscriber,
-        Err(_) => return StatusCode::BAD_REQUEST,
+        Err(_) => return Err(StoreTokenError(DbErr::Custom("表单数据无效".into()))),
     };
 
     let txn = match state.db.begin().await {
         Ok(tx) => tx,
-        Err(_) => return StatusCode::BAD_REQUEST,
+        Err(_) => return Err(StoreTokenError(DbErr::Custom("数据库连接失败".into()))),
     };
 
-    let subscription_id = match insert_subscriber(&txn, &new_subscriber).await {
-        Ok(subscriber) => subscriber.id,
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR,
-    };
+    let subscription_id = insert_subscriber(&txn, &new_subscriber).await?.id;
 
     let subscription_token = generate_subscription_token();
-    if store_token(&txn, subscription_id, &subscription_token).await.is_err() {
-        return StatusCode::INTERNAL_SERVER_ERROR;
-    }
+    store_token(&txn, subscription_id, &subscription_token).await?;
 
     if txn.commit().await.is_err() {
         tracing::error!("提交事务时发生错误");
-        return StatusCode::INTERNAL_SERVER_ERROR;
+        return Err(StoreTokenError(DbErr::Custom("提交事务时发生错误".into())));
     }
 
     if send_confirmation_email(state.email_client.as_ref(), new_subscriber, state.base_url.as_ref(), &subscription_token).await.is_err() {
         tracing::error!("发送确认邮件时发生错误");
-        return StatusCode::INTERNAL_SERVER_ERROR;
+        return Err(StoreTokenError(DbErr::Custom("发送确认邮件时发生错误".into())));
     }
 
-    StatusCode::OK
+    Ok(())
 }
 
 #[tracing::instrument(name = "存储订阅令牌", skip(token, db))]
-pub async fn store_token(db: &DatabaseTransaction, subscription_id: uuid::Uuid, token: &str) -> Result<(), DbErr> {
+pub async fn store_token(db: &DatabaseTransaction, subscription_id: uuid::Uuid, token: &str) -> Result<(), StoreTokenError> {
     let new_token = subscription_tokens::ActiveModel {
         subscription_token: Set(token.into()),
         subscriber_id: Set(subscription_id),
     };
 
     new_token.insert(db).await.map(|_| ()).map_err(|e| {
-        tracing::error!("执行插入语句失败: {:?}", e);
-        e
+        StoreTokenError(e)
     })
 }
 
@@ -113,7 +109,7 @@ fn generate_subscription_token() -> String {
 pub async fn insert_subscriber(
     db: &DatabaseTransaction,
     new_subscriber: &NewSubscriber,
-) -> Result<subscriptions::Model, DbErr> {
+) -> Result<subscriptions::Model, StoreTokenError> {
     let subscriptions: subscriptions::ActiveModel = subscriptions::ActiveModel {
         id: Set(uuid::Uuid::new_v4()),
         email: Set(new_subscriber.email.as_ref().to_string()),
@@ -123,7 +119,22 @@ pub async fn insert_subscriber(
     };
 
     subscriptions.insert(db).await.map_err(|e| {
-        tracing::error!("执行插入语句失败: {:?}", e);
-        e
+        StoreTokenError(e)
     })
+}
+
+#[derive(Debug)]
+pub struct StoreTokenError(DbErr);
+
+impl Display for StoreTokenError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "在存储订阅令牌时发生数据库错误")
+    }
+}
+
+impl IntoResponse for StoreTokenError {
+    fn into_response(self) -> Response {
+        tracing::error!("{}", self.to_string());
+        (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+    }
 }
