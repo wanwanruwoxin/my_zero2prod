@@ -22,6 +22,7 @@ static TRACING: Lazy<()> = Lazy::new(|| {
     }
 });
 
+#[allow(unused)]
 pub struct TestApp {
     pub port: u16,
     pub address: String,
@@ -44,6 +45,7 @@ impl TestApp {
 }
 
 pub async fn spawn_app() -> TestApp {
+    dotenv::dotenv().ok();
     // 第一次执行会初始化Tracing，之后都会跳过
     Lazy::force(&TRACING);
 

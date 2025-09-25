@@ -1,5 +1,5 @@
 use my_zero2prod::entities::subscriptions;
-use sea_orm::EntityTrait;
+use sea_orm::{ConnectionTrait, EntityTrait};
 
 use crate::helpers::spawn_app;
 
@@ -63,4 +63,18 @@ async fn subscribe_returns_a_400_when_fields_are_present_but_empty() {
             desc
         )
     }
+}
+
+#[tokio::test]
+async fn subscribe_fails_if_there_is_a_fatal_database_error() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula_le_guin%40gmail.com";
+
+    app.db
+        .execute_unprepared("ALTER TABLE subscription_tokens DROP COLUMN subscription_token;")
+        .await
+        .unwrap();
+
+    let response = app.post_subscriptions(body.into()).await;
+    assert_eq!(500, response.status().as_u16());
 }
