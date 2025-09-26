@@ -43,14 +43,14 @@ pub async fn subscribe(
 ) -> Result<(), SubscribeError> {
     let new_subscriber = form.try_into()?;
 
-    let txn = state.db.begin().await?;
+    let txn = state.db.begin().await.map_err(SubscribeError::PoolError)?;
 
-    let subscription_id = insert_subscriber(&txn, &new_subscriber).await?.id;
+    let subscription_id = insert_subscriber(&txn, &new_subscriber).await.map_err(SubscribeError::InsertSubscriberError)?.id;
 
     let subscription_token = generate_subscription_token();
     store_token(&txn, subscription_id, &subscription_token).await?;
 
-    txn.commit().await?;
+    txn.commit().await.map_err(SubscribeError::PoolError)?;
 
     send_confirmation_email(state.email_client.as_ref(), new_subscriber, state.base_url.as_ref(), &subscription_token).await?;
 
@@ -97,7 +97,7 @@ fn generate_subscription_token() -> String {
 pub async fn insert_subscriber(
     db: &DatabaseTransaction,
     new_subscriber: &NewSubscriber,
-) -> Result<subscriptions::Model, StoreTokenError> {
+) -> Result<subscriptions::Model, DbErr> {
     let subscriptions: subscriptions::ActiveModel = subscriptions::ActiveModel {
         id: Set(uuid::Uuid::new_v4()),
         email: Set(new_subscriber.email.as_ref().to_string()),
@@ -106,9 +106,7 @@ pub async fn insert_subscriber(
         status: Set("pending_confirmation".into()),
     };
 
-    subscriptions.insert(db).await.map_err(|e| {
-        StoreTokenError(e)
-    })
+    subscriptions.insert(db).await
 }
 
 pub struct StoreTokenError(DbErr);
@@ -152,18 +150,22 @@ fn error_chain_fmt(e: &impl Error, f: &mut Formatter<'_>) -> std::fmt::Result {
 
 pub enum SubscribeError {
     ValidationError(String),
-    DatabaseError(DbErr),
     StoreTokenError(StoreTokenError),
     SendEmailError(lettre::error::Error),
+    PoolError(DbErr),
+    InsertSubscriberError(DbErr),
+    TransactionCommitError(DbErr),
 }
 
 impl Display for SubscribeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             SubscribeError::ValidationError(e) => write!(f, "验证错误: {}", e),
-            SubscribeError::DatabaseError(_) => write!(f, "数据库错误"),
             SubscribeError::StoreTokenError(_) => write!(f, "存储令牌错误"),
             SubscribeError::SendEmailError(_) => write!(f, "发送邮件错误"),
+            SubscribeError::PoolError(_) => write!(f, "数据库连接池错误"),
+            SubscribeError::InsertSubscriberError(_) => write!(f, "插入订阅者错误"),
+            SubscribeError::TransactionCommitError(_) => write!(f, "事务提交错误"),
         }
     }
 }
@@ -178,9 +180,11 @@ impl Error for SubscribeError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             SubscribeError::ValidationError(_) => None,
-            SubscribeError::DatabaseError(e) => Some(e),
             SubscribeError::StoreTokenError(e) => Some(e),
             SubscribeError::SendEmailError(e) => Some(e),
+            SubscribeError::PoolError(e) => Some(e),
+            SubscribeError::InsertSubscriberError(e) => Some(e),
+            SubscribeError::TransactionCommitError(e) => Some(e),
         }
     }
 }
@@ -192,7 +196,9 @@ impl IntoResponse for SubscribeError {
             SubscribeError::ValidationError(_) => {
                 StatusCode::BAD_REQUEST.into_response()
             }
-            SubscribeError::DatabaseError(_) |
+            SubscribeError::PoolError(_) |
+            SubscribeError::InsertSubscriberError(_) |
+            SubscribeError::TransactionCommitError(_) |
             SubscribeError::StoreTokenError(_) |
             SubscribeError::SendEmailError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -204,12 +210,6 @@ impl IntoResponse for SubscribeError {
 impl From<lettre::error::Error> for SubscribeError {
     fn from(value: lettre::error::Error) -> Self {
         Self::SendEmailError(value)
-    }
-}
-
-impl From<DbErr> for SubscribeError {
-    fn from(value: DbErr) -> Self {
-        Self::DatabaseError(value)
     }
 }
 
