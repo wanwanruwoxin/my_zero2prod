@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
@@ -123,7 +124,6 @@ pub async fn insert_subscriber(
     })
 }
 
-#[derive(Debug)]
 pub struct StoreTokenError(DbErr);
 
 impl Display for StoreTokenError {
@@ -134,7 +134,30 @@ impl Display for StoreTokenError {
 
 impl IntoResponse for StoreTokenError {
     fn into_response(self) -> Response {
-        tracing::error!("{}", self.to_string());
+        tracing::error!("{:?}", self);
         (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
     }
+}
+
+impl Error for StoreTokenError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+impl std::fmt::Debug for StoreTokenError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+fn error_chain_fmt(e: &impl Error, f: &mut Formatter<'_>) -> std::fmt::Result {
+    writeln!(f, "{}\n", e)?;
+    let mut current = e.source();
+    while let Some(cause) = current {
+        writeln!(f, "Caused by: \n\t{}", cause)?;
+        current = cause.source();
+    }
+
+    Ok(())
 }
