@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 
 use axum::{Form, extract::State, http::StatusCode};
@@ -40,31 +40,19 @@ impl TryFrom<FormData> for NewSubscriber {
 pub async fn subscribe(
     State(state): State<Arc<AppState>>,
     Form(form): Form<FormData>,
-) -> Result<(), StoreTokenError> {
-    let new_subscriber = match form.try_into() {
-        Ok(subscriber) => subscriber,
-        Err(_) => return Err(StoreTokenError(DbErr::Custom("表单数据无效".into()))),
-    };
+) -> Result<(), SubscribeError> {
+    let new_subscriber = form.try_into()?;
 
-    let txn = match state.db.begin().await {
-        Ok(tx) => tx,
-        Err(_) => return Err(StoreTokenError(DbErr::Custom("数据库连接失败".into()))),
-    };
+    let txn = state.db.begin().await?;
 
     let subscription_id = insert_subscriber(&txn, &new_subscriber).await?.id;
 
     let subscription_token = generate_subscription_token();
     store_token(&txn, subscription_id, &subscription_token).await?;
 
-    if txn.commit().await.is_err() {
-        tracing::error!("提交事务时发生错误");
-        return Err(StoreTokenError(DbErr::Custom("提交事务时发生错误".into())));
-    }
+    txn.commit().await?;
 
-    if send_confirmation_email(state.email_client.as_ref(), new_subscriber, state.base_url.as_ref(), &subscription_token).await.is_err() {
-        tracing::error!("发送确认邮件时发生错误");
-        return Err(StoreTokenError(DbErr::Custom("发送确认邮件时发生错误".into())));
-    }
+    send_confirmation_email(state.email_client.as_ref(), new_subscriber, state.base_url.as_ref(), &subscription_token).await?;
 
     Ok(())
 }
@@ -89,10 +77,10 @@ pub async fn send_confirmation_email(email_client: &EmailClient, new_subscriber:
     );
 
     email_client.send_email(
-        new_subscriber.email, 
+        new_subscriber.email,
         "Welcome!",
         &format!(r#"<h1>欢迎订阅我们的新闻邮件</h1><p>请点击以下链接确认您的订阅：</p><a href="{}">确认订阅</a>"#, confirmation_link),
-        &format!("欢迎订阅我们的新闻邮件, {}", confirmation_link)
+        &format!("欢迎订阅我们的新闻邮件, {}", confirmation_link),
     ).await
 }
 
@@ -103,7 +91,6 @@ fn generate_subscription_token() -> String {
         .take(25)
         .collect()
 }
-
 
 
 #[tracing::instrument(name = "保存订阅者", skip(db, new_subscriber))]
@@ -160,4 +147,80 @@ fn error_chain_fmt(e: &impl Error, f: &mut Formatter<'_>) -> std::fmt::Result {
     }
 
     Ok(())
+}
+
+
+pub enum SubscribeError {
+    ValidationError(String),
+    DatabaseError(DbErr),
+    StoreTokenError(StoreTokenError),
+    SendEmailError(lettre::error::Error),
+}
+
+impl Display for SubscribeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SubscribeError::ValidationError(e) => write!(f, "验证错误: {}", e),
+            SubscribeError::DatabaseError(_) => write!(f, "数据库错误"),
+            SubscribeError::StoreTokenError(_) => write!(f, "存储令牌错误"),
+            SubscribeError::SendEmailError(_) => write!(f, "发送邮件错误"),
+        }
+    }
+}
+
+impl Debug for SubscribeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl Error for SubscribeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            SubscribeError::ValidationError(_) => None,
+            SubscribeError::DatabaseError(e) => Some(e),
+            SubscribeError::StoreTokenError(e) => Some(e),
+            SubscribeError::SendEmailError(e) => Some(e),
+        }
+    }
+}
+
+impl IntoResponse for SubscribeError {
+    fn into_response(self) -> Response {
+        tracing::error!("{:?}", self);
+        match self {
+            SubscribeError::ValidationError(_) => {
+                StatusCode::BAD_REQUEST.into_response()
+            }
+            SubscribeError::DatabaseError(_) |
+            SubscribeError::StoreTokenError(_) |
+            SubscribeError::SendEmailError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
+            }
+        }
+    }
+}
+
+impl From<lettre::error::Error> for SubscribeError {
+    fn from(value: lettre::error::Error) -> Self {
+        Self::SendEmailError(value)
+    }
+}
+
+impl From<DbErr> for SubscribeError {
+    fn from(value: DbErr) -> Self {
+        Self::DatabaseError(value)
+    }
+}
+
+impl From<StoreTokenError> for SubscribeError {
+    fn from(value: StoreTokenError) -> Self {
+        Self::StoreTokenError(value)
+    }
+}
+
+impl From<String> for SubscribeError {
+    fn from(value: String) -> Self {
+        Self::ValidationError(value)
+    }
 }
